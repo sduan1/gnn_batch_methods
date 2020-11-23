@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import time
 
-def evaluate_model(model, data, epochs=1000, batch_method='cluster', num_clusters=10, multi_gpu=False):
+def evaluate_model(model, data, epochs=1000, batch_method='cluster', num_clusters=100, multi_gpu=True):
     if multi_gpu:
         if batch_method == 'cluster':
             data_list = list(ClusterData(data, num_parts=num_clusters))
@@ -21,7 +21,9 @@ def evaluate_model(model, data, epochs=1000, batch_method='cluster', num_cluster
         t0 = time.clock()
         print(f'start time: {t0}')
         for i in range(epochs):
+
             output = model(data_list)
+            print(model.device_ids)
             y = torch.cat([data.y for data in data_list]).to(output.device)
             loss = F.nll_loss(output, y.long())
             print(f'loss: {loss}')

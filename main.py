@@ -7,8 +7,8 @@ import torch_geometric.transforms as T
 
 
 dataset = 'Cora'
-path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', dataset)
-dataset = Reddit(path)
+path = osp.join(osp.dirname(osp.realpath(__file__)), '.', 'data', dataset)
+dataset = Planetoid(path, 'Cora')
 rawdata = dataset[0]
 num_features = dataset.num_features
 num_classes = dataset.num_classes
