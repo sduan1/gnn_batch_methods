@@ -13,7 +13,7 @@ from NeighborSubgraphLoader import NeighborSubgraphLoader
 import pickle as pk
 import argparse
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
+import numpy as np
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -68,64 +68,27 @@ if __name__ == '__main__':
         if args.subgraph_scheme == 'cluster':
             # Split data into subgraphs using cluster methods
             data_list = list(ClusterData(data, num_parts=args.num_parts))
-
-            loader = DataListLoader(data_list, batch_size=args.data_list_batch_size, shuffle=True)
         elif args.subgraph_scheme == 'neighbor':
-
             data_list = list(NeighborSubgraphLoader(data, batch_size=args.neighbor_batch_size))
-            loader = DataListLoader(data_list, batch_size=args.data_list_batch_size, shuffle=True)
             print(f'Using neighbor sampling | number of subgraphs: {len(data_list)}')
 
-        # Start training
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        lr_scheduler = ReduceLROnPlateau(optimizer, 'min', patience=5)
+        batch_sizes = np.array(list(range(1, 129)))*4
+        print(batch_sizes)
+        batch_running_time = []
+        for batch_size in batch_sizes:
+            loader = DataListLoader(data_list, batch_size=batch_size, shuffle=True)
+            optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+            lr_scheduler = ReduceLROnPlateau(optimizer, 'min', patience=5)
 
-        running_times = []
-        running_losses = []
-        running_acc = []
-        for i in range(args.epochs):
-            total = 0
-            total_loss = 0
-            epoch_correct = 0
-            t_start = time.time()
+            temp_batch_sizes = []
+
             for input_list in loader:
                 batch_start = time.time()
                 output = model(input_list)
                 _, predicted = torch.max(output, 1)
                 y = torch.cat([data.y for data in input_list]).to(output.device).squeeze()
-                total += y.size()[0]
-
-                epoch_correct += (predicted == y).sum().item()
-
                 loss = F.nll_loss(output, y.long())
-                total_loss += loss
                 loss.backward()
                 optimizer.step()
                 batch_end = time.time()
                 print(f'batch size: {len(input_list)} | batch time: {batch_end - batch_start}')
-
-            lr_scheduler.step(total_loss)
-            epoch_acc = epoch_correct / total
-            running_acc.append(epoch_acc)
-            t_end = time.time()
-
-            running_times.append(t_end - t_start)
-            running_losses.append(total_loss)
-            print(f'Epoch time: {t_end - t_start}')
-
-            print(f'Epoch: {i} | Total: {total_loss}')
-        save_dict = {'running_losses': running_losses, 'running_times': running_times, 'running_acc': running_acc}
-        with open(f'./gpu_{device_count()}_batch_size_{args.data_list_batch_size}_{args.subgraph_scheme}.pk',
-                  'wb') as f:
-            pk.dump(save_dict, f)
-
-
-
-
-
-
-
-
-
-
-
