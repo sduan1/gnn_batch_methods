@@ -1,65 +1,37 @@
-import os.path as osp
+import __init__
 import torch
-from torch_geometric.nn import GCNConv, SAGEConv
-from utils import norm_layer
-import time
-from torch_geometric.nn import GENConv, DeepGCNLayer
+from gcn_lib.sparse.torch_vertex import GENConv
+from gcn_lib.sparse.torch_nn import norm_layer
 import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 import logging
 
-class SimpleGCN(torch.nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super(SimpleGCN, self).__init__()
-        self.conv1 = GCNConv(input_dim, 16)
-        self.conv2 = GCNConv(16, output_dim)
-        # self.conv1 = ChebConv(data.num_features, 16, K=2)
-        # self.conv2 = ChebConv(16, data.num_features, K=2)
 
-    def forward(self, data):
-        x, edge_index = data.x, data.edge_index
-        x = F.relu(self.conv1(x, edge_index))
-        x = F.dropout(x, training=self.training)
-        x = self.conv2(x, edge_index)
-        return F.log_softmax(x, dim=1)
-
-#https://arxiv.org/abs/1904.03751
 class DeeperGCN(torch.nn.Module):
-    def __init__(self,
-                 num_tasks,
-                 in_channels,
-                 hidden_channels=128,
-                 num_layers=40,
-                 dropout=0.5,
-                 block='res+',
-                 conv='gen',
-                 aggr='softmax',
-                 t=0.1,
-                 p=None,
-                 learn_t=None,
-                 learn_p=None,
-                 msg_norm=None,
-                 learn_msg_scale=None,
-                 norm='batch',
-                 mlp_layers=1
-                 ):
+    def __init__(self, args):
         super(DeeperGCN, self).__init__()
 
-        self.num_layers = num_layers
-        self.dropout = dropout
-        self.block = block
+        self.num_layers = args.num_layers
+        self.dropout = args.dropout
+        self.block = args.block
 
         self.checkpoint_grad = False
 
-        t = t
-        self.learn_t = learn_t
-        p = p
-        self.learn_p = learn_p
-        self.msg_norm = msg_norm
-        learn_msg_scale = learn_msg_scale
+        in_channels = args.in_channels
+        hidden_channels = args.hidden_channels
+        num_tasks = args.num_tasks
+        conv = args.conv
+        aggr = args.gcn_aggr
 
-        norm = norm
-        mlp_layers = mlp_layers
+        t = args.t
+        self.learn_t = args.learn_t
+        p = args.p
+        self.learn_p = args.learn_p
+        self.msg_norm = args.msg_norm
+        learn_msg_scale = args.learn_msg_scale
+
+        norm = args.norm
+        mlp_layers = args.mlp_layers
 
         if aggr in ['softmax_sg', 'softmax', 'power'] and self.num_layers > 3:
             self.checkpoint_grad = True
@@ -94,16 +66,15 @@ class DeeperGCN(torch.nn.Module):
                               t=t, learn_t=self.learn_t,
                               p=p, learn_p=self.learn_p,
                               msg_norm=self.msg_norm, learn_msg_scale=learn_msg_scale,
-                              norm=norm)
+                              norm=norm, mlp_layers=mlp_layers)
             else:
                 raise Exception('Unknown Conv Type')
 
             self.gcns.append(gcn)
             self.norms.append(norm_layer(norm, hidden_channels))
 
-    def forward(self, data):
-        start_time = time.time()
-        x, edge_index = data.x, data.edge_index
+    def forward(self,  x, edge_index):
+
         h = self.node_features_encoder(x)
 
         if self.block == 'res+':
@@ -162,9 +133,6 @@ class DeeperGCN(torch.nn.Module):
 
         h = self.node_pred_linear(h)
 
-        end_time = time.time()
-
-        print(f'Model processed {data.num_graphs} subgraphs | Model process time: {end_time-start_time}')
         return torch.log_softmax(h, dim=-1)
 
     def print_params(self, epoch=None, final=False):
@@ -193,3 +161,4 @@ class DeeperGCN(torch.nn.Module):
                 print('Final s {}'.format(ss))
             else:
                 logging.info('Epoch {}, s {}'.format(epoch, ss))
+

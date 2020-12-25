@@ -4,7 +4,7 @@ import torch
 import torch.nn.functional as F
 import time
 from torch.cuda import device_count
-from Models import SimpleGCN
+from Models import SimpleGCN, DeeperGCN
 from torch_geometric.datasets import Planetoid
 import os.path as osp
 from ogb.nodeproppred import PygNodePropPredDataset
@@ -13,25 +13,9 @@ from NeighborSubgraphLoader import NeighborSubgraphLoader
 import pickle as pk
 import argparse
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
-
-def parse_model_name(model_name, dataset):
-    if model_name == 'simple_gcn':
-        return SimpleGCN(dataset.num_features, dataset.num_classes)
-    else:
-        print('Model initialization failed')
-        return None
+import pickle as pk
+from utils import *
+from unit_tests import *
 
 
 if __name__ == '__main__':
@@ -39,24 +23,22 @@ if __name__ == '__main__':
     parser.add_argument('--multi_gpu', type=str2bool, default=True, help='Toggle multi gpu, 1=True, 0=False')
     parser.add_argument('--use_ogb_dataset', type=str2bool, default=True, help='Use ogb dataset? 1=True, 0= False')
     parser.add_argument('--dataset_name', type=str, default='ogbn-products', help='Dataset name')
-    parser.add_argument('--model', type=str, default='simple_gcn', help='Available models: simple_gcn, sage_gcn]')
+    parser.add_argument('--model', type=str, default='deeper_gcn', help='Available models: simple_gcn, sage_gcn]')
     parser.add_argument('--subgraph_scheme', type=str, default='neighbor', help='scheme of generating subgraphs')
     parser.add_argument('--num_parts', type=int, default=1000, help='number of clusters for cluster_gcn')
     parser.add_argument('--epochs', type=int, default=50, help='Number of epochs')
-    parser.add_argument('--neighbor_batch_size', type=int, default=256, help='Number of epochs')
-    parser.add_argument('--data_list_batch_size', type=int, default=400, help='Number of epochs')
+    parser.add_argument('--neighbor_batch_size', type=int, default=128, help='Number of epochs')
+    parser.add_argument('--data_list_batch_size', type=int, default=4, help='Number of epochs')
+    parser.add_argument('--debug_mode', type=str2bool, default=True, help='Toggle debug mode')
+    parser.add_argument('--num_gpu', type=int, default=1, help='number of gpus')
 
     args = parser.parse_args()
     dataset = PygNodePropPredDataset(name=args.dataset_name)
     data = dataset[0]
-    # dataset = 'Cora'
-    # path = osp.join(osp.dirname(osp.realpath(__file__)), '..', 'data', dataset)
-    # dataset = Planetoid(path, dataset)
-    # data = dataset[0]
-    print(f'data: {data}')
+
 
     if args.multi_gpu:
-        print(f'Using {device_count()} GPUs!')
+        gpu_test(args.num_gpu)
 
         # Prepare model
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -68,15 +50,23 @@ if __name__ == '__main__':
         if args.subgraph_scheme == 'cluster':
             # Split data into subgraphs using cluster methods
             data_list = list(ClusterData(data, num_parts=args.num_parts))
+            print(f'using cluster method')
 
-            loader = DataListLoader(data_list, batch_size=args.data_list_batch_size, shuffle=True)
         elif args.subgraph_scheme == 'neighbor':
+            if args.debug_mode:
+                # Use a smaller dataset for debug purpose
+                with open('debug_saved_list.pk', 'rb') as f:
+                    data_list = pk.load(f)
+            else:
+                data_list = list(NeighborSubgraphLoader(data, batch_size=args.neighbor_batch_size))
 
-            data_list = list(NeighborSubgraphLoader(data, batch_size=args.neighbor_batch_size))
-            loader = DataListLoader(data_list, batch_size=args.data_list_batch_size, shuffle=True)
+
             print(f'Using neighbor sampling | number of subgraphs: {len(data_list)}')
 
-        # Start training
+        loader = DataListLoader(data_list, batch_size=args.data_list_batch_size, shuffle=True)
+        # Training
+
+        # Hyperparameters
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
         lr_scheduler = ReduceLROnPlateau(optimizer, 'min', patience=5)
 
@@ -88,9 +78,14 @@ if __name__ == '__main__':
             total_loss = 0
             epoch_correct = 0
             t_start = time.time()
-            for input_list in loader:
+            for i, input_list in enumerate(loader):
+                print(f"*********************Batch{i} info*********************")
+                print(f'input_list len: {len(input_list)}')
                 batch_start = time.time()
+                forward_start = time.time()
                 output = model(input_list)
+                forward_end = time.time()
+                print(f'forward passing time: {forward_end - forward_start}')
                 _, predicted = torch.max(output, 1)
                 y = torch.cat([data.y for data in input_list]).to(output.device).squeeze()
                 total += y.size()[0]
@@ -99,7 +94,12 @@ if __name__ == '__main__':
 
                 loss = F.nll_loss(output, y.long())
                 total_loss += loss
+
+                backward_start = time.time()
                 loss.backward()
+                backward_end = time.time()
+                print(f'backward_time: {backward_end - backward_start}')
+
                 optimizer.step()
                 batch_end = time.time()
                 print(f'batch size: {len(input_list)} | batch time: {batch_end - batch_start}')
