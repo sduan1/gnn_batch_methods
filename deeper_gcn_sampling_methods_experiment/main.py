@@ -19,6 +19,8 @@ from torch_geometric.data import Data, RandomNodeSampler, GraphSAINTRandomWalkSa
 import pickle as pk
 from NeighborSubgraphLoader import NeighborSubgraphLoader
 
+
+
 @torch.no_grad()
 def test(model, data_list):
     # test on CPU
@@ -39,18 +41,6 @@ def test(model, data_list):
     y_true_list = torch.cat(y_true_list)
     test_acc = accuracy_score(y_true_list, y_pred_list)
 
-    # train_acc = evaluator.eval({
-    #     'y_true': y_true[split_idx['train']],
-    #     'y_pred': y_pred[split_idx['train']],
-    # })['acc']
-    # valid_acc = evaluator.eval({
-    #     'y_true': y_true[split_idx['valid']],
-    #     'y_pred': y_pred[split_idx['valid']],
-    # })['acc']
-    # test_acc = evaluator.eval({
-    #     'y_true': y_true[split_idx['test']],
-    #     'y_pred': y_pred[split_idx['test']],
-    # })['acc']
 
     return test_acc
 
@@ -60,23 +50,12 @@ def train(data_list, model, optimizer, device):
     acc_list = []
     model.train()
 
-    # sg_nodes, sg_edges = data
-    # train_y = y_true[train_idx].squeeze(1)
-
-    # idx_clusters = np.arange(len(sg_nodes))
-    # np.random.shuffle(idx_clusters)
 
     y_pred_list = []
     y_true_list = []
     for sub_graph in data_list:
         print(sub_graph)
 
-        # x_ = x[sg_nodes[idx]].to(device)
-        # sg_edges_ = sg_edges[idx].to(device)
-        # mapper = {node: idx for idx, node in enumerate(sg_nodes[idx])}
-        #
-        # inter_idx = intersection(sg_nodes[idx], train_idx)
-        # training_idx = [mapper[t_idx] for t_idx in inter_idx]
 
         optimizer.zero_grad()
 
@@ -135,19 +114,6 @@ def main():
 
     print(f'Train test split successful, number of train: {len(train_data_list)} | number of test: {len(test_data_list)}')
 
-    # adj = SparseTensor(row=graph.edge_index[0],
-    #                    col=graph.edge_index[1])
-
-    # if args.self_loop:
-    #     adj = adj.set_diag()
-    #     graph.edge_index = add_self_loops(edge_index=graph.edge_index,
-    #                                       num_nodes=graph.num_nodes)[0]
-    # split_idx = dataset.get_idx_split()
-    # train_idx = split_idx["train"].tolist()
-
-
-    #sub_dir = 'random-train_{}-full_batch_test'.format(args.cluster_number)
-    #logging.info(sub_dir)
 
     args.in_channels = graph.x.size(-1)
     args.num_tasks = dataset.num_classes
@@ -166,11 +132,6 @@ def main():
     highest_acc = 0
     best_model_dict = None
     for epoch in range(1, EPOCHS + 1):
-        # generate batches
-        # parts = random_partition_graph(graph.num_nodes,
-        #                                cluster_number=args.cluster_number)
-        # data = generate_sub_graphs(adj, parts, cluster_number=args.cluster_number)
-
 
         epoch_loss, epoch_acc= train(data_list, model, optimizer, device)
         epoch_loss_list.append(epoch_loss)
@@ -187,8 +148,6 @@ def main():
 
 
 
-    #
-    # logging.info("%s" % results)
 
     end_time = time.time()
     total_time = end_time - start_time
@@ -228,7 +187,3 @@ def test_model(model_path):
 
 if __name__ == "__main__":
     main()
-
-
-    #Test model
-    # test_model('./saint_rw_deeper_num_1000.pt')

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 import logging
 
-
+#This code is a modification version of the original implementation: https://github.com/lightaime/deep_gcns_torch/blob/master/examples/ogb/ogbn_products
 class DeeperGCN(torch.nn.Module):
     def __init__(self, args):
         super(DeeperGCN, self).__init__()
